@@ -63,3 +63,16 @@ Should contain:
 - Prompts used
 - Link(s) to shared chat(s)
 - This can also be included in the Git repo as:  `AI_USAGE_DOC.md` 
+
+
+# Examination Instructions
+- Usage of AI tools is permitted
+- Do **not** discuss anything with your peers.
+- Plagiarism if found, will be dealt with severe consequences according to IIT-Madras Student Conduct
+- Please submit within allotted time even if the pipeline is incomplete - partial marks are awarded appropriately
+- Students are instructed to start the screencast recording only after the completion of whole pipeline or when they are done with their attempts in case of partial completion
+- Students are expected to take permission from the proctor about the screencast recording - helps proctor not to flag the instance as malpractice 
+- Students are expected to inform proctor after successful google form submission
+- Students are expected to leave the meet only after completion of scheduled examination time slot - in case of early submissions
+- Proctors do note the time of initiating video screencast creation, form submission for operational co-ordination based on student interaction
+- In case of no acknowledgement from proctor, please message in Google Meet Chat ( Starting the Screencast Recording or Submission Successful)
