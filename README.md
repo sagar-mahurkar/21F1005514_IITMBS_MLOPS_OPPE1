@@ -25,8 +25,8 @@
 
 ## Approach
 
-1. First prepare v0 of the data to be used
+1. Create script for generating preprocessed data
 
-2. Prepare ML pipeline
+2. Prepare model training algorithm
 
-3. Add to dvc
+3. Configure the data with dvc and train the model
