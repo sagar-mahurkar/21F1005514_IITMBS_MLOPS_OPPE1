@@ -8,9 +8,8 @@ def process_folder(folder_path):
     - Converts timestamps to datetime
     - Sorts by time and fills missing values
     - Computes rolling averages and sums (10-minute windows)
-    - Generates a binary target: 1 if next 5-min close > current close, else 0
-    - Combines all processed files into a single DataFrame
-    - Returns the combined DataFrame
+    - Generates binary target: 1 if next 5-min close > current close
+    - Returns combined DataFrame
     """
     
     csv_files = glob.glob(f"{folder_path}/*.csv")
@@ -22,58 +21,63 @@ def process_folder(folder_path):
     for file in csv_files:
         df = pd.read_csv(file)
 
-        # --- Extract stock name from filename ---
+        # Extract stock name from filename
         stock_name = os.path.basename(file).replace("__EQ__NSE__NSE__MINUTE.csv", "")
         df['stock_name'] = stock_name
 
-        # --- Convert timestamp and sort ---
+        # Convert timestamp
         if 'timestamp' not in df.columns:
             raise KeyError(f"'timestamp' column missing in {file}")
         df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
         df = df.dropna(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
         df.set_index('timestamp', inplace=True)
 
-        # --- Fill missing values ---
+        # Fill missing values
         df.ffill(inplace=True)
         df.bfill(inplace=True)
 
-        # --- Feature 1: 10-min rolling average of close price ---
+        # Rolling features (10-minute window)
         df['rolling_avg_10'] = df['close'].rolling(window='10min', min_periods=1).mean()
-
-        # --- Feature 2: Total volume traded over last 10 minutes ---
         df['volume_sum_10'] = df['volume'].rolling(window='10min', min_periods=1).sum()
 
-        # --- Feature 3: Binary target (future price movement in 5 minutes) ---
-        df['close_5min_future'] = df['close'].shift(-5)  # future close price after 5 rows
+        # Future price and target
+        df['close_5min_future'] = df['close'].shift(-5)
         df['target'] = (df['close_5min_future'] > df['close']).astype(int)
 
-        # --- Drop incomplete rows ---
+        # Clean up
         df.dropna(subset=['rolling_avg_10', 'volume_sum_10', 'target'], inplace=True)
-
-        # --- Drop unnecessary intermediate column ---
         df.drop(columns=['close_5min_future'], inplace=True, errors='ignore')
 
         processed_dfs.append(df)
+        print(f"✅ Processed: {os.path.basename(file)} | Rows: {len(df)}")
 
-        print(f"✅ Processed file: {os.path.basename(file)} | Rows: {len(df)}")
-
-    # --- Combine all processed data ---
+    # Combine all processed data
     combined_df = pd.concat(processed_dfs, ignore_index=False)
-    combined_df.reset_index(inplace=True)  # keep timestamp as column
+    combined_df.reset_index(inplace=True)  # keep timestamp as a column
 
-    print(f"\n✅ All files processed from: {folder_path}")
-    print(f"📊 Combined data shape: {combined_df.shape}")
-    print(f"🕒 Time range: {combined_df['timestamp'].min()} → {combined_df['timestamp'].max()}")
-
+    print(f"\n✅ Folder processed: {folder_path}")
+    print(f"📊 Combined shape: {combined_df.shape}")
     return combined_df
 
 
-# --- Example usage ---
+# --- Process and combine both folders ---
 if __name__ == "__main__":
-    folder = "StockAnalyticaData/v0"
-    combined_df = process_folder(folder)
+    folder_v0 = "StockAnalyticaData/v0"
+    folder_v1 = "StockAnalyticaData/v1"
 
-    # --- Export combined data to current directory ---
+    print("🚀 Processing v0 folder...")
+    df_v0 = process_folder(folder_v0)
+
+    print("\n🚀 Processing v1 folder...")
+    df_v1 = process_folder(folder_v1)
+
+    # Combine v0 and v1
+    combined_df = pd.concat([df_v0, df_v1], ignore_index=True)
+    combined_df.sort_values(by=['timestamp', 'stock_name'], inplace=True)
+    combined_df.reset_index(drop=True, inplace=True)
+
+    # Export final combined data
     output_path = "data.csv"
     combined_df.to_csv(output_path, index=False)
-    print(f"\n💾 Combined data exported to: {os.path.abspath(output_path)}")
+    print(f"\n💾 Final combined data exported to: {os.path.abspath(output_path)}")
+    print(f"✅ Total rows: {len(combined_df)} | Columns: {list(combined_df.columns)}")
