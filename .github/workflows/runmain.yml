@@ -1,0 +1,161 @@
+# ==============================================================
+# GitHub Actions Workflow: Main
+# Runs on push/PR merge to main + manual trigger
+# Used for model training and reporting accuracy results
+# ==============================================================
+
+name: Main
+
+# --------------------------------------------------------------
+# Trigger conditions
+# --------------------------------------------------------------
+on:
+  # ✅ Manual trigger available from the Actions tab
+  workflow_dispatch:
+
+  # ✅ Automatically run when code is pushed to main branch
+  push:
+    branches:
+      - main
+    paths:
+      - '**.py'
+      - '**.ipynb'
+      - 'requirements.txt'
+      - 'artifacts/**'
+
+  # ✅ Automatically run for pull requests targeting main branch
+  pull_request:
+    branches:
+      - main
+
+# --------------------------------------------------------------
+# Permissions for commenting on PRs and repo write access
+# --------------------------------------------------------------
+permissions:
+  contents: write
+  pull-requests: write
+
+# --------------------------------------------------------------
+# Job Definition
+# --------------------------------------------------------------
+jobs:
+  test_model:
+    runs-on: ubuntu-latest
+
+    # ✅ Test workflow with multiple DVC data versions
+    strategy:
+      matrix:
+        data_version: [v1.0, v2.0]
+
+    steps:
+      # ----------------------------------------------------------
+      # Step 1: Checkout repository (full history required by DVC)
+      # ----------------------------------------------------------
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------------------------
+      # Step 2: Setup Python environment
+      # ----------------------------------------------------------
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      # ----------------------------------------------------------
+      # Step 3: Setup Continuous Machine Learning (CML)
+      # ----------------------------------------------------------
+      - uses: iterative/setup-cml@v2
+
+      # ----------------------------------------------------------
+      # Step 4: Install dependencies
+      # ----------------------------------------------------------
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      # ----------------------------------------------------------
+      # Step 5: Configure DVC to use your GCS bucket
+      # ----------------------------------------------------------
+      - name: Setup DVC Remote
+        env:
+          GCP_BUCKET: "gs://mlops-lively-nimbus-473407-m9-oppe1"
+        run: |
+          dvc remote add -f -d gcs_remote $GCP_BUCKET
+
+      # ----------------------------------------------------------
+      # Step 6: Authenticate to GCP using GitHub Secret credentials
+      # ----------------------------------------------------------
+      - name: Authenticate to GCP
+        env:
+          GCP_CREDENTIALS_JSON: ${{ secrets.GCP_CREDENTIALS_JSON }}
+        run: |
+          echo "$GCP_CREDENTIALS_JSON" > /tmp/gcp_key.json
+          gcloud auth activate-service-account --key-file=/tmp/gcp_key.json
+          dvc remote modify gcs_remote credentialpath /tmp/gcp_key.json
+
+      # ----------------------------------------------------------
+      # Step 7: Verify access to the configured GCS bucket
+      # ----------------------------------------------------------
+      - name: Verify GCP access
+        run: |
+          gsutil ls gs://mlops-lively-nimbus-473407-m9 || echo "⚠️ Could not list bucket contents"
+
+      # ----------------------------------------------------------
+      # Step 8: Checkout correct data version and pull DVC data
+      # ----------------------------------------------------------
+      - name: Checkout and Pull DVC Data
+        run: |
+          echo "📦 Checking out data version: ${{ matrix.data_version }}"
+          git fetch --tags
+          git checkout ${{ matrix.data_version }}
+          echo "===== DVC CONFIG ====="
+          dvc remote list
+          dvc remote list --local || true
+          cat .dvc/config || true
+          echo "===== PULLING DATA ====="
+          dvc pull -v || exit 1
+          echo "✅ Pulled DVC data successfully"
+          echo "===== FILES IN WORKSPACE ====="
+          ls -R .
+
+      # ----------------------------------------------------------
+      # Step 9: Verify that data.csv exists before training
+      # ----------------------------------------------------------
+      - name: Verify data.csv exists
+        run: |
+          if [ ! -f data.csv ] && [ ! -f data/data.csv ]; then
+            echo "❌ data.csv not found after DVC pull!"
+            ls -R .
+            exit 1
+          fi
+          echo "✅ data.csv found!"
+
+      # ----------------------------------------------------------
+      # Step 10: Train the model
+      # ----------------------------------------------------------
+      - name: Train the model
+        run: |
+          python train.py > main_output.txt 2>&1 || true
+
+      # ----------------------------------------------------------
+      # Step 11: Display training log for debugging
+      # ----------------------------------------------------------
+      - name: Debug — show training output
+        run: |
+          echo "=== 🧠 Training Log ==="
+          cat main_output.txt || true
+
+      # ----------------------------------------------------------
+      # Step 12: Create and publish a CML report as PR comment
+      # ----------------------------------------------------------
+      - name: Create CML report
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "## 📊 Accuracy Output for ${{ matrix.data_version }}" > report.md
+          echo "\`\`\`" >> report.md
+          cat main_output.txt >> report.md
+          echo "\`\`\`" >> report.md
+          cml comment create --publish report.md
